@@ -10,6 +10,8 @@ from pathlib import Path
 class Settings:
     science_area: str = ""
     channel_id: str = ""
+    post_time: str = ""
+    use_llm: bool = False
 
 
 def _settings_path() -> Path:
@@ -25,6 +27,8 @@ def load_settings() -> Settings:
     return Settings(
         science_area=data.get("science_area", ""),
         channel_id=data.get("channel_id", ""),
+        post_time=data.get("post_time", ""),
+        use_llm=bool(data.get("use_llm", False)),
     )
 
 

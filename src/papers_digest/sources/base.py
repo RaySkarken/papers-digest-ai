@@ -11,6 +11,6 @@ class PaperSource(ABC):
     name: str
 
     @abstractmethod
-    def fetch(self, target_date: date) -> Iterable[Paper]:
+    def fetch(self, target_date: date, query: str) -> Iterable[Paper]:
         raise NotImplementedError
 

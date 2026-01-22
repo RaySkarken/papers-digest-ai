@@ -25,6 +25,7 @@
 4. Rank by relevance to query.
 5. Summarize and format into a post.
 6. Admin bot posts to the channel.
+7. Scheduler can auto-post daily.
 
 ## Extensibility
 

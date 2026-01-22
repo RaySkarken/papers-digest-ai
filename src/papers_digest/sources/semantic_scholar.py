@@ -12,11 +12,11 @@ from papers_digest.sources.base import PaperSource
 class SemanticScholarSource(PaperSource):
     name = "semantic_scholar"
 
-    def fetch(self, target_date: date) -> Iterable[Paper]:
+    def fetch(self, target_date: date, query: str) -> Iterable[Paper]:
         target = target_date.strftime("%Y-%m-%d")
         url = "https://api.semanticscholar.org/graph/v1/paper/search"
         params = {
-            "query": "artificial intelligence",
+            "query": query.strip() or "artificial intelligence",
             "limit": 50,
             "fields": "title,abstract,authors,url,publicationDate",
         }

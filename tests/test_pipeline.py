@@ -11,7 +11,7 @@ class FakeSource(PaperSource):
     def __init__(self, papers: list[Paper]) -> None:
         self._papers = papers
 
-    def fetch(self, target_date: date):
+    def fetch(self, target_date: date, query: str):
         return [paper for paper in self._papers if paper.published_date == target_date]
 
 

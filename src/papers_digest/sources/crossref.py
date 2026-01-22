@@ -12,11 +12,12 @@ from papers_digest.sources.base import PaperSource
 class CrossrefSource(PaperSource):
     name = "crossref"
 
-    def fetch(self, target_date: date) -> Iterable[Paper]:
+    def fetch(self, target_date: date, query: str) -> Iterable[Paper]:
         target = target_date.strftime("%Y-%m-%d")
         url = "https://api.crossref.org/works"
         params = {
             "filter": f"from-pub-date:{target},until-pub-date:{target}",
+            "query.title": query.strip() or "artificial intelligence",
             "rows": 50,
             "select": "DOI,title,author,URL,abstract,published-online,published-print",
         }

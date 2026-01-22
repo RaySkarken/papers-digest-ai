@@ -29,10 +29,14 @@ Admin commands:
 - `/set_channel <@channel or id>` sets the target channel.
 - `/preview_today` generates a draft message.
 - `/post_today` posts to the channel.
+- `/set_post_time HH:MM` schedules daily auto-posting.
+- `/disable_post_time` disables scheduled posting.
+- `/enable_llm` enables LLM summaries (requires `OPENAI_API_KEY`).
+- `/disable_llm` disables LLM summaries.
 
 ## What it does
 
-- Collects papers from arXiv, Crossref, and Semantic Scholar released today.
+- Collects papers from arXiv, Crossref, Semantic Scholar, and OpenAlex released today.
 - Filters by exact date and ranks by query relevance.
 - Generates a markdown digest with short summaries and focus recommendations.
 
@@ -50,6 +54,9 @@ Use environment variables for the bot:
 - `PAPERS_DIGEST_ADMIN_IDS` (comma-separated Telegram user IDs)
 - `PAPERS_DIGEST_CHANNEL_ID`
 - `PAPERS_DIGEST_SETTINGS` (optional path to settings JSON)
+- `PAPERS_DIGEST_TIMEZONE` (IANA timezone, default `UTC`)
+- `OPENAI_API_KEY` (optional LLM summarization)
+- `OPENAI_MODEL` (optional, default `gpt-4o-mini`)
 
 ## Docs
 

@@ -14,11 +14,12 @@ from papers_digest.sources.base import PaperSource
 class ArxivSource(PaperSource):
     name = "arxiv"
 
-    def fetch(self, target_date: date) -> Iterable[Paper]:
-        query = "cat:cs.AI OR cat:cs.CL OR cat:cs.LG"
+    def fetch(self, target_date: date, query: str) -> Iterable[Paper]:
+        query = query.strip() or "artificial intelligence"
+        search = f"all:{query}"
         url = (
             "http://export.arxiv.org/api/query?"
-            f"search_query={query}&start=0&max_results=50&sortBy=submittedDate&sortOrder=descending"
+            f"search_query={search}&start=0&max_results=50&sortBy=submittedDate&sortOrder=descending"
         )
         response = requests.get(url, timeout=30)
         response.raise_for_status()
