@@ -17,7 +17,7 @@ pip install -e .
 
 Пример запуска:
 ```bash
-papers-digest --query "graph neural networks" --limit 10
+papers-digest --query "graph neural networks" --limit 10 --metrics
 ```
 
 ## LLM (опционально)

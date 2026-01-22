@@ -8,6 +8,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from papers_digest.agents import AgentTeam
+from papers_digest.metrics import build_metrics
 
 app = typer.Typer(add_completion=False)
 console = Console()
@@ -18,6 +19,7 @@ def main(
     query: str = typer.Option(..., "--query", "-q", help="Search query for today's papers"),
     limit: int = typer.Option(10, "--limit", "-l", help="Max number of papers to include"),
     run_date: date = typer.Option(date.today(), "--date", "-d", help="Date for papers (YYYY-MM-DD)"),
+    show_metrics: bool = typer.Option(False, "--metrics", help="Show quality metrics"),
 ) -> None:
     team = AgentTeam()
     report, issues = team.run(query=query, run_date=run_date, limit=limit)
@@ -40,6 +42,14 @@ def main(
 
     if issues:
         console.print(Panel("\n".join(issues), title="QA Warnings", style="red"))
+    if show_metrics:
+        metrics = build_metrics(report)
+        metrics_table = Table(title="Quality Metrics")
+        metrics_table.add_column("Metric")
+        metrics_table.add_column("Value", justify="right")
+        for name, value in metrics.items():
+            metrics_table.add_row(name, f"{value:.2f}")
+        console.print(metrics_table)
 
 
 if __name__ == "__main__":
