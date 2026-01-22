@@ -11,6 +11,25 @@ pip install -e ".[dev]"
 papers-digest run --query "multimodal retrieval" --limit 8
 ```
 
+## Telegram bot admin
+
+Admin commands are only available in private chat and require admin IDs.
+
+```
+export PAPERS_DIGEST_BOT_TOKEN="..."
+export PAPERS_DIGEST_ADMIN_IDS="123456789"
+export PAPERS_DIGEST_CHANNEL_ID="@your_channel"
+papers-digest-bot
+```
+
+Admin commands:
+
+- `/set_area <science area>` sets the science area for today.
+- `/show_area` shows the current area.
+- `/set_channel <@channel or id>` sets the target channel.
+- `/preview_today` generates a draft message.
+- `/post_today` posts to the channel.
+
 ## What it does
 
 - Collects papers from arXiv, Crossref, and Semantic Scholar released today.
@@ -25,7 +44,12 @@ papers-digest run --query "multimodal retrieval" --limit 8
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set keys if you want to enable optional LLM summarization later.
+Use environment variables for the bot:
+
+- `PAPERS_DIGEST_BOT_TOKEN`
+- `PAPERS_DIGEST_ADMIN_IDS` (comma-separated Telegram user IDs)
+- `PAPERS_DIGEST_CHANNEL_ID`
+- `PAPERS_DIGEST_SETTINGS` (optional path to settings JSON)
 
 ## Docs
 
