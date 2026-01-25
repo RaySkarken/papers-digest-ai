@@ -28,17 +28,22 @@ def format_digest(
     """Format digest as Telegram MarkdownV2 messages. Returns list of message parts."""
     messages = []
     
-    # Header - escape date
+    # Header - escape all text
     date_str = _escape_markdown_v2(target_date.isoformat())
-    header = f"*Papers digest for {date_str}*\n\n"
-    header += f"Query: *{_escape_markdown_v2(query)}*\n\n"
+    header_text = _escape_markdown_v2("Papers digest for")
+    header = f"*{header_text} {date_str}*\n\n"
+    query_text = _escape_markdown_v2("Query:")
+    query_escaped = _escape_markdown_v2(query)
+    header += f"{query_text} *{query_escaped}*\n\n"
     
     if not papers:
-        header += _escape_markdown_v2("No papers matched today.")
+        no_papers_text = _escape_markdown_v2("No papers matched today.")
+        header += no_papers_text
         messages.append(header)
         return messages
 
-    header += "*Top papers*\n\n"
+    top_papers_text = _escape_markdown_v2("Top papers")
+    header += f"*{top_papers_text}*\n\n"
     current_message = header
     
     for idx, paper in enumerate(papers, start=1):
@@ -51,14 +56,20 @@ def format_digest(
         summary_escaped = _escape_markdown_v2(summary)
         source_escaped = _escape_markdown_v2(paper.source)
         
-        # Format paper entry
+        # Format paper entry - escape all labels
         paper_entry = f"{idx}\\. *{title_escaped}*\n"
-        paper_entry += f"   Source: {source_escaped}\n"
-        paper_entry += f"   Authors: {authors_escaped}\n"
+        source_label = _escape_markdown_v2("Source:")
+        paper_entry += f"   {source_label} {source_escaped}\n"
+        authors_label = _escape_markdown_v2("Authors:")
+        paper_entry += f"   {authors_label} {authors_escaped}\n"
         if paper.url:
-            # URLs don't need escaping in MarkdownV2, but we need to format them properly
-            paper_entry += f"   Link: {paper.url}\n"
-        paper_entry += f"   Summary: {summary_escaped}\n\n"
+            # URLs in MarkdownV2 should be formatted as [text](url)
+            link_label = _escape_markdown_v2("Link:")
+            # Escape URL but keep it as plain text for now
+            url_escaped = _escape_markdown_v2(paper.url)
+            paper_entry += f"   {link_label} {url_escaped}\n"
+        summary_label = _escape_markdown_v2("Summary:")
+        paper_entry += f"   {summary_label} {summary_escaped}\n\n"
         
         # Check if adding this paper would exceed 4096 characters
         if len(current_message) + len(paper_entry) > 4000:  # Leave some margin
@@ -69,10 +80,12 @@ def format_digest(
 
     # Add recommendations if any
     if recommendations:
-        recommendations_text = "\n*Recommendations*\n\n"
+        recommendations_label = _escape_markdown_v2("Recommendations")
+        recommendations_text = f"\n*{recommendations_label}*\n\n"
         for item in recommendations:
             item_escaped = _escape_markdown_v2(item)
-            recommendations_text += f"• {item_escaped}\n"
+            bullet = _escape_markdown_v2("•")
+            recommendations_text += f"{bullet} {item_escaped}\n"
         
         if len(current_message) + len(recommendations_text) > 4000:
             messages.append(current_message.rstrip())
