@@ -10,6 +10,7 @@ dependencies = [
   "feedparser>=6.0.11",
   "python-telegram-bot>=21.0",
   "apscheduler>=3.10.0",
+  "flask>=3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +21,7 @@ dev = [
 [project.scripts]
 papers-digest = "papers_digest.cli:main"
 papers-digest-bot = "papers_digest.bot:main"
+papers-digest-web = "papers_digest.webapp:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

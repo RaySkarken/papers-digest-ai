@@ -5,7 +5,7 @@ import os
 from datetime import date
 from zoneinfo import ZoneInfo
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatType
 from telegram.error import NetworkError, TelegramError, TimedOut
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -52,19 +52,31 @@ async def _require_admin(update: Update) -> bool:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _require_admin(update):
         return
+    web_url = os.getenv("PAPERS_DIGEST_WEB_URL", "http://localhost:5000")
     await update.message.reply_text(
         "Панель администратора готова.\n\n"
-        "Управление каналами:\n"
+        "🌐 Откройте Mini-App для удобного управления:\n"
+        f"/app - открыть веб-интерфейс\n\n"
+        "Или используйте команды:\n"
         "/channels - список каналов\n"
         "/add_channel <@channel> <область> - добавить канал\n"
-        "/remove_channel <@channel> - удалить канал\n"
-        "/channel_info <@channel> - информация о канале\n"
-        "/channel_set_area <@channel> <область> - установить область\n"
-        "/channel_set_time <@channel> <ЧЧ:ММ> - установить время\n"
-        "\nДругие команды:\n"
         "/preview_today [@channel] - предпросмотр\n"
-        "/post_today [@channel] - опубликовать\n"
-        "/status - общий статус"
+        "/post_today [@channel] - опубликовать"
+    )
+
+
+async def open_app(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Open Mini-App."""
+    if not await _require_admin(update):
+        return
+    web_url = os.getenv("PAPERS_DIGEST_WEB_URL", "http://localhost:5000")
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("Открыть Mini-App", web_app={"url": web_url})
+    ]])
+    await update.message.reply_text(
+        f"Откройте Mini-App:\n{web_url}\n\n"
+        "Или используйте кнопку ниже:",
+        reply_markup=keyboard
     )
 
 
@@ -578,6 +590,7 @@ def main() -> None:
     app = Application.builder().token(token).post_init(_post_init).build()
     app.add_error_handler(error_handler)
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("app", open_app))
     # Channel management
     app.add_handler(CommandHandler("channels", list_channels))
     app.add_handler(CommandHandler("add_channel", add_channel_cmd))

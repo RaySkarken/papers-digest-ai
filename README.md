@@ -15,25 +15,44 @@ papers-digest run --query "multimodal retrieval" --limit 8
 
 Admin commands are only available in private chat and require admin IDs.
 
+### Quick start
+
 ```
 export PAPERS_DIGEST_BOT_TOKEN="..."
 export PAPERS_DIGEST_ADMIN_IDS="123456789"
-export PAPERS_DIGEST_CHANNEL_ID="@your_channel"
+export PAPERS_DIGEST_WEB_URL="https://your-domain.com"  # For Mini-App
 papers-digest-bot
+papers-digest-web  # In another terminal, or use a process manager
 ```
 
-Admin commands:
+### Mini-App (Web Interface)
 
-- `/set_area <science area>` sets the science area for today.
-- `/show_area` shows the current area.
-- `/set_channel <@channel or id>` sets the target channel.
-- `/preview_today` generates a draft message.
-- `/post_today` posts to the channel.
-- `/set_post_time HH:MM` schedules daily auto-posting.
-- `/disable_post_time` disables scheduled posting.
-- `/enable_llm` enables LLM summaries (requires `OPENAI_API_KEY`).
-- `/disable_llm` disables LLM summaries.
-- `/set_summarizer auto|openai|ollama|simple` chooses provider.
+The easiest way to manage channels is through the Telegram Mini-App:
+
+1. Start the web server: `papers-digest-web`
+2. Configure the Mini-App URL in BotFather:
+   - Go to @BotFather
+   - Use `/newapp` or `/myapps` → select your bot
+   - Set the Mini-App URL to your web server URL
+3. Use `/app` command in the bot to open the Mini-App
+
+The Mini-App provides a user-friendly interface for:
+- Adding/removing channels
+- Setting science areas for each channel
+- Configuring post times
+- Managing LLM settings
+
+### Bot Commands
+
+- `/app` - Open Mini-App (recommended)
+- `/channels` - List all channels
+- `/add_channel <@channel> [area]` - Add a channel
+- `/remove_channel <@channel>` - Remove a channel
+- `/channel_info <@channel>` - Show channel info
+- `/channel_set_area <@channel> <area>` - Set science area
+- `/channel_set_time <@channel> <HH:MM>` - Set post time
+- `/preview_today [@channel]` - Preview digest
+- `/post_today [@channel]` - Post to channel
 
 ## What it does
 
@@ -49,17 +68,24 @@ Admin commands:
 
 ## Configuration
 
-Use environment variables for the bot:
+Use environment variables:
 
-- `PAPERS_DIGEST_BOT_TOKEN`
-- `PAPERS_DIGEST_ADMIN_IDS` (comma-separated Telegram user IDs)
-- `PAPERS_DIGEST_CHANNEL_ID`
-- `PAPERS_DIGEST_SETTINGS` (optional path to settings JSON)
-- `PAPERS_DIGEST_TIMEZONE` (IANA timezone, default `UTC`)
-- `OPENAI_API_KEY` (optional LLM summarization)
-- `OPENAI_MODEL` (optional, default `gpt-4o-mini`)
-- `OLLAMA_MODEL` (optional, default `llama3.1:8b`)
-- `OLLAMA_BASE_URL` (optional, default `http://localhost:11434`)
+**Bot:**
+- `PAPERS_DIGEST_BOT_TOKEN` - Telegram bot token (required)
+- `PAPERS_DIGEST_ADMIN_IDS` - Comma-separated Telegram user IDs (required)
+- `PAPERS_DIGEST_SETTINGS` - Optional path to settings JSON
+- `PAPERS_DIGEST_TIMEZONE` - IANA timezone (default: `UTC`)
+
+**Web Server (Mini-App):**
+- `PAPERS_DIGEST_WEB_URL` - Public URL of your web server (required for Mini-App)
+- `PAPERS_DIGEST_WEB_HOST` - Host to bind (default: `127.0.0.1`)
+- `PAPERS_DIGEST_WEB_PORT` - Port to bind (default: `5000`)
+
+**LLM:**
+- `OPENAI_API_KEY` - Optional, for OpenAI summarization
+- `OPENAI_MODEL` - Optional (default: `gpt-4o-mini`)
+- `OLLAMA_MODEL` - Optional (default: `llama3.1:8b`)
+- `OLLAMA_BASE_URL` - Optional (default: `http://localhost:11434`)
 
 ## Docs
 
