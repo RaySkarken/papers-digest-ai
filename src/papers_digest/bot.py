@@ -232,8 +232,14 @@ async def _scheduled_post(app: Application) -> None:
 def _configure_scheduler(app: Application) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone=_tzinfo())
     _apply_schedule(scheduler, app)
-    scheduler.start()
     return scheduler
+
+
+async def _post_init(app: Application) -> None:
+    """Initialize scheduler after event loop is running."""
+    global _SCHEDULER
+    if _SCHEDULER is not None:
+        _SCHEDULER.start()
 
 
 def _apply_schedule(scheduler: AsyncIOScheduler, app: Application) -> None:
@@ -246,8 +252,9 @@ def _apply_schedule(scheduler: AsyncIOScheduler, app: Application) -> None:
         return
     hour, minute = parsed
     scheduler.add_job(
-        lambda: app.create_task(_scheduled_post(app)),
+        _scheduled_post,
         "cron",
+        args=[app],
         hour=hour,
         minute=minute,
         id="daily_post",
@@ -274,7 +281,7 @@ def main() -> None:
     if not token:
         raise RuntimeError("PAPERS_DIGEST_BOT_TOKEN is not set.")
 
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(token).post_init(_post_init).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("set_area", set_area))
     app.add_handler(CommandHandler("show_area", show_area))
