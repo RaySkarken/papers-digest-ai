@@ -69,7 +69,20 @@ async def open_app(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Open Mini-App."""
     if not await _require_admin(update):
         return
-    web_url = os.getenv("PAPERS_DIGEST_WEB_URL", "http://localhost:5000")
+    web_url = os.getenv("PAPERS_DIGEST_WEB_URL", "")
+    if not web_url:
+        await update.message.reply_text(
+            "Mini-App не настроен.\n\n"
+            "Для использования Mini-App нужно:\n"
+            "1. Запустить веб-сервер: papers-digest-web\n"
+            "2. Настроить публичный URL (например, через ngrok)\n"
+            "3. Установить PAPERS_DIGEST_WEB_URL\n\n"
+            "Или используйте команды бота для управления каналами:\n"
+            "/channels - список каналов\n"
+            "/add_channel - добавить канал"
+        )
+        return
+    
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("Открыть Mini-App", web_app={"url": web_url})
     ]])
