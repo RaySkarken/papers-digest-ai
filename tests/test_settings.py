@@ -13,6 +13,7 @@ def test_settings_roundtrip(tmp_path: Path, monkeypatch) -> None:
             channel_id="@chan",
             post_time="09:30",
             use_llm=True,
+            summarizer_provider="ollama",
         )
     )
     loaded = load_settings()
@@ -21,4 +22,5 @@ def test_settings_roundtrip(tmp_path: Path, monkeypatch) -> None:
     assert loaded.channel_id == "@chan"
     assert loaded.post_time == "09:30"
     assert loaded.use_llm is True
+    assert loaded.summarizer_provider == "ollama"
 

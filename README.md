@@ -33,6 +33,7 @@ Admin commands:
 - `/disable_post_time` disables scheduled posting.
 - `/enable_llm` enables LLM summaries (requires `OPENAI_API_KEY`).
 - `/disable_llm` disables LLM summaries.
+- `/set_summarizer auto|openai|ollama|simple` chooses provider.
 
 ## What it does
 
@@ -57,6 +58,8 @@ Use environment variables for the bot:
 - `PAPERS_DIGEST_TIMEZONE` (IANA timezone, default `UTC`)
 - `OPENAI_API_KEY` (optional LLM summarization)
 - `OPENAI_MODEL` (optional, default `gpt-4o-mini`)
+- `OLLAMA_MODEL` (optional, default `llama3.1:8b`)
+- `OLLAMA_BASE_URL` (optional, default `http://localhost:11434`)
 
 ## Docs
 

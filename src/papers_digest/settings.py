@@ -12,6 +12,7 @@ class Settings:
     channel_id: str = ""
     post_time: str = ""
     use_llm: bool = False
+    summarizer_provider: str = "auto"
 
 
 def _settings_path() -> Path:
@@ -29,6 +30,7 @@ def load_settings() -> Settings:
         channel_id=data.get("channel_id", ""),
         post_time=data.get("post_time", ""),
         use_llm=bool(data.get("use_llm", False)),
+        summarizer_provider=data.get("summarizer_provider", "auto"),
     )
 
 

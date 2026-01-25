@@ -52,3 +52,28 @@ class OpenAISummarizer:
         except Exception:
             return SimpleSummarizer().summarize(paper)
 
+
+class OllamaSummarizer:
+    def __init__(self, model: str | None = None) -> None:
+        self._model = model or os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+        self._base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+    def summarize(self, paper: Paper) -> str:
+        prompt = (
+            "Summarize the following paper in 2-3 sentences. Focus on novelty, "
+            "methods, and results.\n\n"
+            f"Title: {paper.title}\n"
+            f"Abstract: {paper.abstract}\n"
+        )
+        try:
+            response = requests.post(
+                f"{self._base_url}/api/generate",
+                json={"model": self._model, "prompt": prompt, "stream": False},
+                timeout=60,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("response", "").strip() or SimpleSummarizer().summarize(paper)
+        except Exception:
+            return SimpleSummarizer().summarize(paper)
+

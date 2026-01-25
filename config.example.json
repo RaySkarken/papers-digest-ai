@@ -2,6 +2,7 @@
   "science_area": "multimodal retrieval",
   "channel_id": "@your_channel",
   "post_time": "09:00",
-  "use_llm": false
+  "use_llm": false,
+  "summarizer_provider": "auto"
 }
 

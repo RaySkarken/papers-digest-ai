@@ -12,7 +12,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from papers_digest.pipeline import run_digest
 from papers_digest.settings import Settings, load_settings, save_settings
-from papers_digest.summarizer import OpenAISummarizer, SimpleSummarizer, Summarizer
+from papers_digest.summarizer import OllamaSummarizer, OpenAISummarizer, SimpleSummarizer, Summarizer
 
 _SCHEDULER: AsyncIOScheduler | None = None
 
@@ -44,7 +44,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Admin panel ready. Commands: /set_area, /show_area, /set_channel, /status, "
         "/preview_today, /post_today, /set_post_time, /disable_post_time, "
-        "/enable_llm, /disable_llm"
+        "/enable_llm, /disable_llm, /set_summarizer"
     )
 
 
@@ -90,14 +90,23 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     channel = settings.channel_id or os.getenv("PAPERS_DIGEST_CHANNEL_ID", "") or "Not set"
     post_time = settings.post_time or "Not set"
     llm_enabled = "on" if settings.use_llm else "off"
+    summarizer = settings.summarizer_provider
     await update.message.reply_text(
-        f"Science area: {area}\nChannel: {channel}\nPost time: {post_time}\nLLM: {llm_enabled}"
+        f"Science area: {area}\nChannel: {channel}\nPost time: {post_time}\n"
+        f"LLM: {llm_enabled}\nSummarizer: {summarizer}"
     )
 
 def _pick_summarizer(settings: Settings) -> Summarizer:
     api_key = os.getenv("OPENAI_API_KEY", "")
-    if settings.use_llm and api_key:
+    provider = settings.summarizer_provider or "auto"
+    if settings.use_llm and provider == "openai" and api_key:
         return OpenAISummarizer(api_key)
+    if settings.use_llm and provider == "ollama":
+        return OllamaSummarizer()
+    if settings.use_llm and provider == "auto":
+        if api_key:
+            return OpenAISummarizer(api_key)
+        return OllamaSummarizer()
     return SimpleSummarizer()
 
 
@@ -193,6 +202,21 @@ async def disable_llm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await update.message.reply_text("LLM summarization disabled.")
 
 
+async def set_summarizer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin(update):
+        return
+    value = " ".join(context.args).strip().lower()
+    if value not in {"auto", "openai", "ollama", "simple"}:
+        await update.message.reply_text("Usage: /set_summarizer auto|openai|ollama|simple")
+        return
+    settings = load_settings()
+    settings.summarizer_provider = value
+    if value == "simple":
+        settings.use_llm = False
+    save_settings(settings)
+    await update.message.reply_text(f"Summarizer set to: {value}")
+
+
 async def _scheduled_post(app: Application) -> None:
     settings = load_settings()
     channel = settings.channel_id or os.getenv("PAPERS_DIGEST_CHANNEL_ID", "")
@@ -262,6 +286,7 @@ def main() -> None:
     app.add_handler(CommandHandler("disable_post_time", disable_post_time))
     app.add_handler(CommandHandler("enable_llm", enable_llm))
     app.add_handler(CommandHandler("disable_llm", disable_llm))
+    app.add_handler(CommandHandler("set_summarizer", set_summarizer))
 
     global _SCHEDULER
     _SCHEDULER = _configure_scheduler(app)
