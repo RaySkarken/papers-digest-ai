@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from telegram import Update
 from telegram.constants import ChatType
+from telegram.error import NetworkError, TelegramError, TimedOut
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -119,6 +120,24 @@ def _build_digest(settings: Settings) -> str:
     return run_digest(query=query, target_date=date.today(), limit=8, summarizer=_pick_summarizer(settings))
 
 
+async def _safe_send_message(bot, chat_id: str | int, text: str, max_retries: int = 3) -> bool:
+    """Safely send a message with retry logic."""
+    text = text[:4096]  # Telegram limit
+    for attempt in range(max_retries):
+        try:
+            await bot.send_message(chat_id=chat_id, text=text)
+            return True
+        except (TimedOut, NetworkError) as e:
+            logger.warning(f"Network error sending message (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt == max_retries - 1:
+                logger.error(f"Failed to send message after {max_retries} attempts")
+                return False
+        except TelegramError as e:
+            logger.error(f"Telegram error sending message: {e}")
+            return False
+    return False
+
+
 async def preview_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _require_admin(update):
         return
@@ -126,13 +145,17 @@ async def preview_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     try:
         digest = _build_digest(settings)
     except ValueError as exc:
-        await update.message.reply_text(str(exc))
+        await _safe_send_message(context.bot, update.effective_chat.id, str(exc))
         return
     except Exception as e:
         logger.error(f"Failed to build digest: {e}", exc_info=True)
-        await update.message.reply_text(f"Error generating digest: {e}. Some sources may be unavailable.")
+        await _safe_send_message(
+            context.bot, update.effective_chat.id, f"Error generating digest: {e}. Some sources may be unavailable."
+        )
         return
-    await update.message.reply_text(digest[:4096])
+    success = await _safe_send_message(context.bot, update.effective_chat.id, digest)
+    if not success:
+        await update.message.reply_text("Generated digest but failed to send. Check logs.")
 
 
 async def post_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -141,19 +164,24 @@ async def post_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     settings = load_settings()
     channel = settings.channel_id or os.getenv("PAPERS_DIGEST_CHANNEL_ID", "")
     if not channel:
-        await update.message.reply_text("Channel is not set. Use /set_channel.")
+        await _safe_send_message(context.bot, update.effective_chat.id, "Channel is not set. Use /set_channel.")
         return
     try:
         digest = _build_digest(settings)
     except ValueError as exc:
-        await update.message.reply_text(str(exc))
+        await _safe_send_message(context.bot, update.effective_chat.id, str(exc))
         return
     except Exception as e:
         logger.error(f"Failed to build digest: {e}", exc_info=True)
-        await update.message.reply_text(f"Error generating digest: {e}. Some sources may be unavailable.")
+        await _safe_send_message(
+            context.bot, update.effective_chat.id, f"Error generating digest: {e}. Some sources may be unavailable."
+        )
         return
-    await context.bot.send_message(chat_id=channel, text=digest[:4096])
-    await update.message.reply_text("Posted to channel.")
+    success = await _safe_send_message(context.bot, channel, digest)
+    if success:
+        await _safe_send_message(context.bot, update.effective_chat.id, "Posted to channel.")
+    else:
+        await _safe_send_message(context.bot, update.effective_chat.id, "Failed to post to channel. Check logs.")
 
 
 def _parse_time(value: str) -> tuple[int, int] | None:
@@ -227,6 +255,19 @@ async def set_summarizer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text(f"Summarizer set to: {value}")
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle errors in the bot."""
+    logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_message:
+        try:
+            error_msg = "An error occurred. Please try again later."
+            if isinstance(context.error, (TimedOut, NetworkError)):
+                error_msg = "Network timeout. Please try again."
+            await _safe_send_message(context.bot, update.effective_chat.id, error_msg)
+        except Exception:
+            logger.error("Failed to send error message to user")
+
+
 async def _scheduled_post(app: Application) -> None:
     settings = load_settings()
     channel = settings.channel_id or os.getenv("PAPERS_DIGEST_CHANNEL_ID", "")
@@ -240,7 +281,9 @@ async def _scheduled_post(app: Application) -> None:
     except Exception as e:
         logger.error(f"Scheduled post failed: {e}", exc_info=True)
         return
-    await app.bot.send_message(chat_id=channel, text=digest[:4096])
+    success = await _safe_send_message(app.bot, channel, digest)
+    if not success:
+        logger.error(f"Failed to send scheduled post to channel {channel}")
 
 
 def _configure_scheduler(app: Application) -> AsyncIOScheduler:
@@ -300,6 +343,7 @@ def main() -> None:
         raise RuntimeError("PAPERS_DIGEST_BOT_TOKEN is not set.")
 
     app = Application.builder().token(token).post_init(_post_init).build()
+    app.add_error_handler(error_handler)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("set_area", set_area))
     app.add_handler(CommandHandler("show_area", show_area))
