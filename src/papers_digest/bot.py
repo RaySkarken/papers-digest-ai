@@ -13,7 +13,15 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from papers_digest.pipeline import run_digest
-from papers_digest.settings import Settings, load_settings, save_settings
+from papers_digest.settings import (
+    Settings,
+    ChannelConfig,
+    load_settings,
+    save_settings,
+    get_channel_config,
+    add_channel,
+    remove_channel,
+)
 from papers_digest.summarizer import OllamaSummarizer, OpenAISummarizer, SimpleSummarizer, Summarizer
 
 logger = logging.getLogger(__name__)
@@ -45,9 +53,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _require_admin(update):
         return
     await update.message.reply_text(
-        "Панель администратора готова. Команды: /set_area, /show_area, /set_channel, /status, "
-        "/preview_today, /post_today, /set_post_time, /disable_post_time, "
-        "/enable_llm, /disable_llm, /set_summarizer"
+        "Панель администратора готова.\n\n"
+        "Управление каналами:\n"
+        "/channels - список каналов\n"
+        "/add_channel <@channel> <область> - добавить канал\n"
+        "/remove_channel <@channel> - удалить канал\n"
+        "/channel_info <@channel> - информация о канале\n"
+        "/channel_set_area <@channel> <область> - установить область\n"
+        "/channel_set_time <@channel> <ЧЧ:ММ> - установить время\n"
+        "\nДругие команды:\n"
+        "/preview_today [@channel] - предпросмотр\n"
+        "/post_today [@channel] - опубликовать\n"
+        "/status - общий статус"
     )
 
 
@@ -73,16 +90,137 @@ async def show_area(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def set_channel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Legacy command for backward compatibility."""
     if not await _require_admin(update):
         return
     text = " ".join(context.args).strip()
     if not text:
-        await update.message.reply_text("Использование: /set_channel <channel_id или @channel>")
+        await update.message.reply_text("Использование: /set_channel <channel_id или @channel>\n(Рекомендуется использовать /add_channel)")
         return
     settings = load_settings()
-    settings.channel_id = text
+    # Add as new channel or update legacy channel_id
+    config = add_channel(settings, text, settings.science_area)
+    settings.channel_id = text  # Keep for legacy
     save_settings(settings)
-    await update.message.reply_text(f"Канал установлен: {text}")
+    await update.message.reply_text(f"Канал установлен: {text}\n(Рекомендуется использовать /add_channel для управления несколькими каналами)")
+
+
+async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin(update):
+        return
+    settings = load_settings()
+    if not settings.channels:
+        await update.message.reply_text("Каналы не настроены. Используйте /add_channel для добавления.")
+        return
+    lines = ["Настроенные каналы:\n"]
+    for channel_id, config in settings.channels.items():
+        status = "✓" if config.enabled else "✗"
+        area = config.science_area or "не установлена"
+        time = config.post_time or "не установлено"
+        lines.append(f"{status} {channel_id}")
+        lines.append(f"   Область: {area}")
+        lines.append(f"   Время: {time}\n")
+    await update.message.reply_text("\n".join(lines))
+
+
+async def add_channel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin(update):
+        return
+    args = context.args or []
+    if len(args) < 1:
+        await update.message.reply_text("Использование: /add_channel <@channel> [область науки]")
+        return
+    channel_id = args[0].strip()
+    science_area = " ".join(args[1:]).strip() if len(args) > 1 else ""
+    settings = load_settings()
+    config = add_channel(settings, channel_id, science_area)
+    save_settings(settings)
+    msg = f"Канал {channel_id} добавлен."
+    if science_area:
+        msg += f"\nОбласть науки: {science_area}"
+    await update.message.reply_text(msg)
+
+
+async def remove_channel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin(update):
+        return
+    channel_id = " ".join(context.args).strip() if context.args else ""
+    if not channel_id:
+        await update.message.reply_text("Использование: /remove_channel <@channel>")
+        return
+    settings = load_settings()
+    if remove_channel(settings, channel_id):
+        save_settings(settings)
+        await update.message.reply_text(f"Канал {channel_id} удален.")
+    else:
+        await update.message.reply_text(f"Канал {channel_id} не найден.")
+
+
+async def channel_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin(update):
+        return
+    channel_id = " ".join(context.args).strip() if context.args else ""
+    if not channel_id:
+        await update.message.reply_text("Использование: /channel_info <@channel>")
+        return
+    settings = load_settings()
+    config = get_channel_config(settings, channel_id)
+    if not config:
+        await update.message.reply_text(f"Канал {channel_id} не найден.")
+        return
+    llm_status = "включен" if config.use_llm else "выключен"
+    status = "включен" if config.enabled else "выключен"
+    await update.message.reply_text(
+        f"Канал: {config.channel_id}\n"
+        f"Область науки: {config.science_area or 'не установлена'}\n"
+        f"Время публикации: {config.post_time or 'не установлено'}\n"
+        f"LLM: {llm_status}\n"
+        f"Саммаризатор: {config.summarizer_provider}\n"
+        f"Статус: {status}"
+    )
+
+
+async def channel_set_area(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin(update):
+        return
+    args = context.args or []
+    if len(args) < 2:
+        await update.message.reply_text("Использование: /channel_set_area <@channel> <область науки>")
+        return
+    channel_id = args[0].strip()
+    area = " ".join(args[1:]).strip()
+    settings = load_settings()
+    config = get_channel_config(settings, channel_id)
+    if not config:
+        await update.message.reply_text(f"Канал {channel_id} не найден. Используйте /add_channel для добавления.")
+        return
+    config.science_area = area
+    save_settings(settings)
+    await update.message.reply_text(f"Область науки для {channel_id} установлена: {area}")
+
+
+async def channel_set_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin(update):
+        return
+    args = context.args or []
+    if len(args) < 2:
+        await update.message.reply_text("Использование: /channel_set_time <@channel> <ЧЧ:ММ>")
+        return
+    channel_id = args[0].strip()
+    time_str = args[1].strip()
+    parsed = _parse_time(time_str)
+    if not parsed:
+        await update.message.reply_text("Неверный формат времени. Используйте ЧЧ:ММ (24ч)")
+        return
+    settings = load_settings()
+    config = get_channel_config(settings, channel_id)
+    if not config:
+        await update.message.reply_text(f"Канал {channel_id} не найден. Используйте /add_channel для добавления.")
+        return
+    config.post_time = time_str
+    save_settings(settings)
+    _reschedule(context.application)
+    await update.message.reply_text(f"Время публикации для {channel_id} установлено: {time_str}")
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -99,25 +237,29 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"LLM: {llm_enabled}\nСаммаризатор: {summarizer}"
     )
 
-def _pick_summarizer(settings: Settings) -> Summarizer:
+def _pick_summarizer(config: ChannelConfig | Settings) -> Summarizer:
+    """Pick summarizer based on channel config or global settings."""
     api_key = os.getenv("OPENAI_API_KEY", "")
-    provider = settings.summarizer_provider or "auto"
-    if settings.use_llm and provider == "openai" and api_key:
+    use_llm = config.use_llm if isinstance(config, ChannelConfig) else config.use_llm
+    provider = config.summarizer_provider if isinstance(config, ChannelConfig) else (config.summarizer_provider or "auto")
+    
+    if use_llm and provider == "openai" and api_key:
         return OpenAISummarizer(api_key)
-    if settings.use_llm and provider == "ollama":
+    if use_llm and provider == "ollama":
         return OllamaSummarizer()
-    if settings.use_llm and provider == "auto":
+    if use_llm and provider == "auto":
         if api_key:
             return OpenAISummarizer(api_key)
         return OllamaSummarizer()
     return SimpleSummarizer()
 
 
-def _build_digest(settings: Settings) -> list[str]:
-    query = settings.science_area.strip()
+def _build_digest(config: ChannelConfig) -> list[str]:
+    """Build digest for a specific channel configuration."""
+    query = config.science_area.strip()
     if not query:
-        raise ValueError("Область науки не установлена. Используйте /set_area.")
-    return run_digest(query=query, target_date=date.today(), limit=8, summarizer=_pick_summarizer(settings))
+        raise ValueError(f"Область науки не установлена для канала {config.channel_id}. Используйте /channel_set_area.")
+    return run_digest(query=query, target_date=date.today(), limit=8, summarizer=_pick_summarizer(config))
 
 
 async def _safe_send_message(
@@ -166,8 +308,29 @@ async def preview_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not await _require_admin(update):
         return
     settings = load_settings()
+    # Check if channel specified
+    channel_id = context.args[0].strip() if context.args else None
+    if channel_id:
+        config = get_channel_config(settings, channel_id)
+        if not config:
+            await _safe_send_message(context.bot, update.effective_chat.id, f"Канал {channel_id} не найден.", parse_mode=None)
+            return
+    else:
+        # Use first channel or legacy settings
+        if settings.channels:
+            config = next(iter(settings.channels.values()))
+        else:
+            # Legacy: create temporary config from old settings
+            from papers_digest.settings import ChannelConfig
+            config = ChannelConfig(
+                channel_id=settings.channel_id or "default",
+                science_area=settings.science_area,
+                use_llm=settings.use_llm,
+                summarizer_provider=settings.summarizer_provider,
+            )
+    
     try:
-        digest_parts = _build_digest(settings)
+        digest_parts = _build_digest(config)
     except ValueError as exc:
         await _safe_send_message(context.bot, update.effective_chat.id, str(exc), parse_mode=None)
         return
@@ -186,26 +349,48 @@ async def post_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if not await _require_admin(update):
         return
     settings = load_settings()
-    channel = settings.channel_id or os.getenv("PAPERS_DIGEST_CHANNEL_ID", "")
-    if not channel:
-        await _safe_send_message(context.bot, update.effective_chat.id, "Канал не установлен. Используйте /set_channel.", parse_mode=None)
-        return
+    # Check if channel specified
+    channel_id = context.args[0].strip() if context.args else None
+    if channel_id:
+        config = get_channel_config(settings, channel_id)
+        if not config:
+            await _safe_send_message(context.bot, update.effective_chat.id, f"Канал {channel_id} не найден.", parse_mode=None)
+            return
+    else:
+        # Use first channel or legacy settings
+        if settings.channels:
+            config = next(iter(settings.channels.values()))
+            channel_id = config.channel_id
+        else:
+            # Legacy: use old channel_id
+            channel_id = settings.channel_id or os.getenv("PAPERS_DIGEST_CHANNEL_ID", "")
+            if not channel_id:
+                await _safe_send_message(context.bot, update.effective_chat.id, "Канал не установлен. Используйте /add_channel или /post_today <@channel>.", parse_mode=None)
+                return
+            from papers_digest.settings import ChannelConfig
+            config = ChannelConfig(
+                channel_id=channel_id,
+                science_area=settings.science_area,
+                use_llm=settings.use_llm,
+                summarizer_provider=settings.summarizer_provider,
+            )
+    
     try:
-        digest_parts = _build_digest(settings)
+        digest_parts = _build_digest(config)
     except ValueError as exc:
         await _safe_send_message(context.bot, update.effective_chat.id, str(exc), parse_mode=None)
         return
     except Exception as e:
         logger.error(f"Failed to build digest: {e}", exc_info=True)
         await _safe_send_message(
-            context.bot, update.effective_chat.id, f"Error generating digest: {e}. Some sources may be unavailable.", parse_mode=None
+            context.bot, update.effective_chat.id, f"Ошибка генерации дайджеста: {e}. Некоторые источники могут быть недоступны.", parse_mode=None
         )
         return
-    success = await _send_multiple_messages(context.bot, channel, digest_parts)
+    success = await _send_multiple_messages(context.bot, channel_id, digest_parts)
     if success:
-        await _safe_send_message(context.bot, update.effective_chat.id, "Опубликовано в канале.", parse_mode=None)
+        await _safe_send_message(context.bot, update.effective_chat.id, f"Опубликовано в канале {channel_id}.", parse_mode=None)
     else:
-        await _safe_send_message(context.bot, update.effective_chat.id, "Не удалось опубликовать в канале. Проверьте логи.", parse_mode=None)
+        await _safe_send_message(context.bot, update.effective_chat.id, f"Не удалось опубликовать в канале {channel_id}. Проверьте логи.", parse_mode=None)
 
 
 def _parse_time(value: str) -> tuple[int, int] | None:
@@ -292,22 +477,25 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             logger.error("Failed to send error message to user")
 
 
-async def _scheduled_post(app: Application) -> None:
+async def _scheduled_post(app: Application, channel_id: str) -> None:
+    """Post digest to a specific channel."""
     settings = load_settings()
-    channel = settings.channel_id or os.getenv("PAPERS_DIGEST_CHANNEL_ID", "")
-    if not channel:
+    config = get_channel_config(settings, channel_id)
+    if not config or not config.enabled:
+        return
+    if not config.post_time:
         return
     try:
-        digest_parts = _build_digest(settings)
+        digest_parts = _build_digest(config)
     except ValueError:
-        logger.warning("Scheduled post skipped: science area not set")
+        logger.warning(f"Scheduled post skipped for {channel_id}: science area not set")
         return
     except Exception as e:
-        logger.error(f"Scheduled post failed: {e}", exc_info=True)
+        logger.error(f"Scheduled post failed for {channel_id}: {e}", exc_info=True)
         return
-    success = await _send_multiple_messages(app.bot, channel, digest_parts)
+    success = await _send_multiple_messages(app.bot, channel_id, digest_parts)
     if not success:
-        logger.error(f"Failed to send scheduled post to channel {channel}")
+        logger.error(f"Failed to send scheduled post to channel {channel_id}")
 
 
 def _configure_scheduler(app: Application) -> AsyncIOScheduler:
@@ -324,23 +512,44 @@ async def _post_init(app: Application) -> None:
 
 
 def _apply_schedule(scheduler: AsyncIOScheduler, app: Application) -> None:
+    """Apply schedule for all channels."""
     settings = load_settings()
     scheduler.remove_all_jobs()
-    if not settings.post_time:
-        return
-    parsed = _parse_time(settings.post_time)
-    if not parsed:
-        return
-    hour, minute = parsed
-    scheduler.add_job(
-        _scheduled_post,
-        "cron",
-        args=[app],
-        hour=hour,
-        minute=minute,
-        id="daily_post",
-        replace_existing=True,
-    )
+    
+    # Schedule posts for each channel
+    for channel_id, config in settings.channels.items():
+        if not config.enabled or not config.post_time:
+            continue
+        parsed = _parse_time(config.post_time)
+        if not parsed:
+            continue
+        hour, minute = parsed
+        scheduler.add_job(
+            _scheduled_post,
+            "cron",
+            args=[app, channel_id],
+            hour=hour,
+            minute=minute,
+            id=f"daily_post_{channel_id}",
+            replace_existing=True,
+        )
+    
+    # Legacy: support old single channel format
+    if not settings.channels and settings.post_time:
+        parsed = _parse_time(settings.post_time)
+        if parsed:
+            hour, minute = parsed
+            channel_id = settings.channel_id or os.getenv("PAPERS_DIGEST_CHANNEL_ID", "")
+            if channel_id:
+                scheduler.add_job(
+                    _scheduled_post,
+                    "cron",
+                    args=[app, channel_id],
+                    hour=hour,
+                    minute=minute,
+                    id="daily_post_legacy",
+                    replace_existing=True,
+                )
 
 
 def _reschedule(app: Application) -> None:
@@ -369,9 +578,18 @@ def main() -> None:
     app = Application.builder().token(token).post_init(_post_init).build()
     app.add_error_handler(error_handler)
     app.add_handler(CommandHandler("start", start))
+    # Channel management
+    app.add_handler(CommandHandler("channels", list_channels))
+    app.add_handler(CommandHandler("add_channel", add_channel_cmd))
+    app.add_handler(CommandHandler("remove_channel", remove_channel_cmd))
+    app.add_handler(CommandHandler("channel_info", channel_info))
+    app.add_handler(CommandHandler("channel_set_area", channel_set_area))
+    app.add_handler(CommandHandler("channel_set_time", channel_set_time))
+    # Legacy commands (kept for backward compatibility)
     app.add_handler(CommandHandler("set_area", set_area))
     app.add_handler(CommandHandler("show_area", show_area))
     app.add_handler(CommandHandler("set_channel", set_channel))
+    # Other commands
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("preview_today", preview_today))
     app.add_handler(CommandHandler("post_today", post_today))
