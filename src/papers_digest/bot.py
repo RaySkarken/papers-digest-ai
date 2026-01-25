@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from datetime import date
 from zoneinfo import ZoneInfo
@@ -14,6 +15,7 @@ from papers_digest.pipeline import run_digest
 from papers_digest.settings import Settings, load_settings, save_settings
 from papers_digest.summarizer import OllamaSummarizer, OpenAISummarizer, SimpleSummarizer, Summarizer
 
+logger = logging.getLogger(__name__)
 _SCHEDULER: AsyncIOScheduler | None = None
 
 
@@ -126,6 +128,10 @@ async def preview_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     except ValueError as exc:
         await update.message.reply_text(str(exc))
         return
+    except Exception as e:
+        logger.error(f"Failed to build digest: {e}", exc_info=True)
+        await update.message.reply_text(f"Error generating digest: {e}. Some sources may be unavailable.")
+        return
     await update.message.reply_text(digest[:4096])
 
 
@@ -141,6 +147,10 @@ async def post_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         digest = _build_digest(settings)
     except ValueError as exc:
         await update.message.reply_text(str(exc))
+        return
+    except Exception as e:
+        logger.error(f"Failed to build digest: {e}", exc_info=True)
+        await update.message.reply_text(f"Error generating digest: {e}. Some sources may be unavailable.")
         return
     await context.bot.send_message(chat_id=channel, text=digest[:4096])
     await update.message.reply_text("Posted to channel.")
@@ -225,6 +235,10 @@ async def _scheduled_post(app: Application) -> None:
     try:
         digest = _build_digest(settings)
     except ValueError:
+        logger.warning("Scheduled post skipped: science area not set")
+        return
+    except Exception as e:
+        logger.error(f"Scheduled post failed: {e}", exc_info=True)
         return
     await app.bot.send_message(chat_id=channel, text=digest[:4096])
 
@@ -277,6 +291,10 @@ def _tzinfo() -> ZoneInfo:
 
 
 def main() -> None:
+    logging.basicConfig(
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=logging.INFO,
+    )
     token = os.getenv("PAPERS_DIGEST_BOT_TOKEN")
     if not token:
         raise RuntimeError("PAPERS_DIGEST_BOT_TOKEN is not set.")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from datetime import date
 from typing import Iterable, Sequence
@@ -14,6 +15,8 @@ from papers_digest.sources.openalex import OpenAlexSource
 from papers_digest.sources.semantic_scholar import SemanticScholarSource
 from papers_digest.summarizer import OpenAISummarizer, SimpleSummarizer, Summarizer
 
+logger = logging.getLogger(__name__)
+
 
 def _default_sources() -> list[PaperSource]:
     return [ArxivSource(), CrossrefSource(), SemanticScholarSource(), OpenAlexSource()]
@@ -22,7 +25,13 @@ def _default_sources() -> list[PaperSource]:
 def _collect_papers(target_date: date, query: str, sources: Sequence[PaperSource]) -> list[Paper]:
     papers: list[Paper] = []
     for source in sources:
-        papers.extend(source.fetch(target_date, query))
+        try:
+            fetched = list(source.fetch(target_date, query))
+            papers.extend(fetched)
+            logger.info(f"Fetched {len(fetched)} papers from {source.name}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch from {source.name}: {e}", exc_info=True)
+            continue
     return papers
 
 
