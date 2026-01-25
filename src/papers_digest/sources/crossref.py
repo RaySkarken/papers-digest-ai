@@ -27,7 +27,10 @@ class CrossrefSource(PaperSource):
 
         for item in items:
             title = (item.get("title") or [""])[0]
-            abstract = (item.get("abstract") or "").replace("<jats:p>", "").replace("</jats:p>", "")
+            # Clean HTML tags from abstract
+            import re
+            abstract = (item.get("abstract") or "")
+            abstract = re.sub(r"<[^>]+>", "", abstract)  # Remove all HTML tags
             authors = [
                 f"{author.get('given', '').strip()} {author.get('family', '').strip()}".strip()
                 for author in item.get("author", [])

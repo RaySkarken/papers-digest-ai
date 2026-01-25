@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Sequence
 
 from papers_digest.models import Paper
+
+
+def _clean_html(text: str) -> str:
+    """Remove HTML tags from text."""
+    return re.sub(r"<[^>]+>", "", text)
 
 
 def _escape_markdown_v2(text: str) -> str:
@@ -28,47 +34,48 @@ def format_digest(
     """Format digest as Telegram MarkdownV2 messages. Returns list of message parts."""
     messages = []
     
-    # Header - escape all text
+    # Header - escape all text, translate to Russian
     date_str = _escape_markdown_v2(target_date.isoformat())
-    header_text = _escape_markdown_v2("Papers digest for")
+    header_text = _escape_markdown_v2("Дайджест статей за")
     header = f"*{header_text} {date_str}*\n\n"
-    query_text = _escape_markdown_v2("Query:")
+    query_text = _escape_markdown_v2("Область:")
     query_escaped = _escape_markdown_v2(query)
     header += f"{query_text} *{query_escaped}*\n\n"
     
     if not papers:
-        no_papers_text = _escape_markdown_v2("No papers matched today.")
+        no_papers_text = _escape_markdown_v2("Сегодня статей не найдено.")
         header += no_papers_text
         messages.append(header)
         return messages
 
-    top_papers_text = _escape_markdown_v2("Top papers")
+    top_papers_text = _escape_markdown_v2("Топ статей")
     header += f"*{top_papers_text}*\n\n"
     current_message = header
     
     for idx, paper in enumerate(papers, start=1):
-        summary = summaries.get(paper.paper_id, "Summary not available.")
-        authors = ", ".join(paper.authors) if paper.authors else "Unknown authors"
+        summary = summaries.get(paper.paper_id, "Краткое содержание недоступно.")
+        authors = ", ".join(paper.authors) if paper.authors else "Авторы неизвестны"
         
-        # Escape all text fields
-        title_escaped = _escape_markdown_v2(paper.title)
-        authors_escaped = _escape_markdown_v2(authors)
-        summary_escaped = _escape_markdown_v2(summary)
+        # Clean HTML tags and escape all text fields
+        title_clean = _clean_html(paper.title)
+        title_escaped = _escape_markdown_v2(title_clean)
+        authors_clean = _clean_html(authors)
+        authors_escaped = _escape_markdown_v2(authors_clean)
+        summary_clean = _clean_html(summary)
+        summary_escaped = _escape_markdown_v2(summary_clean)
         source_escaped = _escape_markdown_v2(paper.source)
         
-        # Format paper entry - escape all labels
+        # Format paper entry - escape all labels, translate to Russian
         paper_entry = f"{idx}\\. *{title_escaped}*\n"
-        source_label = _escape_markdown_v2("Source:")
+        source_label = _escape_markdown_v2("Источник:")
         paper_entry += f"   {source_label} {source_escaped}\n"
-        authors_label = _escape_markdown_v2("Authors:")
+        authors_label = _escape_markdown_v2("Авторы:")
         paper_entry += f"   {authors_label} {authors_escaped}\n"
         if paper.url:
-            # URLs in MarkdownV2 should be formatted as [text](url)
-            link_label = _escape_markdown_v2("Link:")
-            # Escape URL but keep it as plain text for now
+            link_label = _escape_markdown_v2("Ссылка:")
             url_escaped = _escape_markdown_v2(paper.url)
             paper_entry += f"   {link_label} {url_escaped}\n"
-        summary_label = _escape_markdown_v2("Summary:")
+        summary_label = _escape_markdown_v2("Краткое содержание:")
         paper_entry += f"   {summary_label} {summary_escaped}\n\n"
         
         # Check if adding this paper would exceed 4096 characters
@@ -77,21 +84,6 @@ def format_digest(
             current_message = ""
         
         current_message += paper_entry
-
-    # Add recommendations if any
-    if recommendations:
-        recommendations_label = _escape_markdown_v2("Recommendations")
-        recommendations_text = f"\n*{recommendations_label}*\n\n"
-        for item in recommendations:
-            item_escaped = _escape_markdown_v2(item)
-            bullet = _escape_markdown_v2("•")
-            recommendations_text += f"{bullet} {item_escaped}\n"
-        
-        if len(current_message) + len(recommendations_text) > 4000:
-            messages.append(current_message.rstrip())
-            current_message = recommendations_text
-        else:
-            current_message += recommendations_text
     
     if current_message.strip():
         messages.append(current_message.rstrip())

@@ -37,7 +37,7 @@ async def _require_admin(update: Update) -> bool:
     if _is_admin(update):
         return True
     if update.message:
-        await update.message.reply_text("Access denied. Contact the admin.")
+        await update.message.reply_text("Доступ запрещен. Свяжитесь с администратором.")
     return False
 
 
@@ -45,7 +45,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _require_admin(update):
         return
     await update.message.reply_text(
-        "Admin panel ready. Commands: /set_area, /show_area, /set_channel, /status, "
+        "Панель администратора готова. Команды: /set_area, /show_area, /set_channel, /status, "
         "/preview_today, /post_today, /set_post_time, /disable_post_time, "
         "/enable_llm, /disable_llm, /set_summarizer"
     )
@@ -56,20 +56,20 @@ async def set_area(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     text = " ".join(context.args).strip()
     if not text:
-        await update.message.reply_text("Usage: /set_area <science area>")
+        await update.message.reply_text("Использование: /set_area <область науки>")
         return
     settings = load_settings()
     settings.science_area = text
     save_settings(settings)
-    await update.message.reply_text(f"Science area set to: {text}")
+    await update.message.reply_text(f"Область науки установлена: {text}")
 
 
 async def show_area(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _require_admin(update):
         return
     settings = load_settings()
-    area = settings.science_area or "Not set"
-    await update.message.reply_text(f"Science area: {area}")
+    area = settings.science_area or "Не установлена"
+    await update.message.reply_text(f"Область науки: {area}")
 
 
 async def set_channel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -77,26 +77,26 @@ async def set_channel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     text = " ".join(context.args).strip()
     if not text:
-        await update.message.reply_text("Usage: /set_channel <channel_id or @channel>")
+        await update.message.reply_text("Использование: /set_channel <channel_id или @channel>")
         return
     settings = load_settings()
     settings.channel_id = text
     save_settings(settings)
-    await update.message.reply_text(f"Channel set to: {text}")
+    await update.message.reply_text(f"Канал установлен: {text}")
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _require_admin(update):
         return
     settings = load_settings()
-    area = settings.science_area or "Not set"
-    channel = settings.channel_id or os.getenv("PAPERS_DIGEST_CHANNEL_ID", "") or "Not set"
-    post_time = settings.post_time or "Not set"
-    llm_enabled = "on" if settings.use_llm else "off"
+    area = settings.science_area or "Не установлена"
+    channel = settings.channel_id or os.getenv("PAPERS_DIGEST_CHANNEL_ID", "") or "Не установлен"
+    post_time = settings.post_time or "Не установлено"
+    llm_enabled = "включен" if settings.use_llm else "выключен"
     summarizer = settings.summarizer_provider
     await update.message.reply_text(
-        f"Science area: {area}\nChannel: {channel}\nPost time: {post_time}\n"
-        f"LLM: {llm_enabled}\nSummarizer: {summarizer}"
+        f"Область науки: {area}\nКанал: {channel}\nВремя публикации: {post_time}\n"
+        f"LLM: {llm_enabled}\nСаммаризатор: {summarizer}"
     )
 
 def _pick_summarizer(settings: Settings) -> Summarizer:
@@ -116,7 +116,7 @@ def _pick_summarizer(settings: Settings) -> Summarizer:
 def _build_digest(settings: Settings) -> list[str]:
     query = settings.science_area.strip()
     if not query:
-        raise ValueError("Science area is not set. Use /set_area.")
+        raise ValueError("Область науки не установлена. Используйте /set_area.")
     return run_digest(query=query, target_date=date.today(), limit=8, summarizer=_pick_summarizer(settings))
 
 
@@ -174,12 +174,12 @@ async def preview_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     except Exception as e:
         logger.error(f"Failed to build digest: {e}", exc_info=True)
         await _safe_send_message(
-            context.bot, update.effective_chat.id, f"Error generating digest: {e}. Some sources may be unavailable.", parse_mode=None
+            context.bot, update.effective_chat.id, f"Ошибка генерации дайджеста: {e}. Некоторые источники могут быть недоступны.", parse_mode=None
         )
         return
     success = await _send_multiple_messages(context.bot, update.effective_chat.id, digest_parts)
     if not success:
-        await _safe_send_message(context.bot, update.effective_chat.id, "Generated digest but failed to send some parts. Check logs.", parse_mode=None)
+        await _safe_send_message(context.bot, update.effective_chat.id, "Дайджест сгенерирован, но не удалось отправить некоторые части. Проверьте логи.", parse_mode=None)
 
 
 async def post_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -188,7 +188,7 @@ async def post_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     settings = load_settings()
     channel = settings.channel_id or os.getenv("PAPERS_DIGEST_CHANNEL_ID", "")
     if not channel:
-        await _safe_send_message(context.bot, update.effective_chat.id, "Channel is not set. Use /set_channel.", parse_mode=None)
+        await _safe_send_message(context.bot, update.effective_chat.id, "Канал не установлен. Используйте /set_channel.", parse_mode=None)
         return
     try:
         digest_parts = _build_digest(settings)
@@ -203,9 +203,9 @@ async def post_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
     success = await _send_multiple_messages(context.bot, channel, digest_parts)
     if success:
-        await _safe_send_message(context.bot, update.effective_chat.id, "Posted to channel.", parse_mode=None)
+        await _safe_send_message(context.bot, update.effective_chat.id, "Опубликовано в канале.", parse_mode=None)
     else:
-        await _safe_send_message(context.bot, update.effective_chat.id, "Failed to post to channel. Check logs.", parse_mode=None)
+        await _safe_send_message(context.bot, update.effective_chat.id, "Не удалось опубликовать в канале. Проверьте логи.", parse_mode=None)
 
 
 def _parse_time(value: str) -> tuple[int, int] | None:
@@ -227,13 +227,13 @@ async def set_post_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     value = " ".join(context.args).strip()
     parsed = _parse_time(value)
     if not parsed:
-        await update.message.reply_text("Usage: /set_post_time HH:MM (24h)")
+        await update.message.reply_text("Использование: /set_post_time ЧЧ:ММ (24ч)")
         return
     settings = load_settings()
     settings.post_time = value
     save_settings(settings)
     _reschedule(context.application)
-    await update.message.reply_text(f"Post time set to: {value}")
+    await update.message.reply_text(f"Время публикации установлено: {value}")
 
 
 async def disable_post_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -243,7 +243,7 @@ async def disable_post_time(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     settings.post_time = ""
     save_settings(settings)
     _reschedule(context.application)
-    await update.message.reply_text("Scheduled posting disabled.")
+    await update.message.reply_text("Автоматическая публикация отключена.")
 
 
 async def enable_llm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -252,7 +252,7 @@ async def enable_llm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     settings = load_settings()
     settings.use_llm = True
     save_settings(settings)
-    await update.message.reply_text("LLM summarization enabled.")
+    await update.message.reply_text("LLM саммаризация включена.")
 
 
 async def disable_llm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -261,7 +261,7 @@ async def disable_llm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     settings = load_settings()
     settings.use_llm = False
     save_settings(settings)
-    await update.message.reply_text("LLM summarization disabled.")
+    await update.message.reply_text("LLM саммаризация выключена.")
 
 
 async def set_summarizer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -269,14 +269,14 @@ async def set_summarizer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     value = " ".join(context.args).strip().lower()
     if value not in {"auto", "openai", "ollama", "simple"}:
-        await update.message.reply_text("Usage: /set_summarizer auto|openai|ollama|simple")
+        await update.message.reply_text("Использование: /set_summarizer auto|openai|ollama|simple")
         return
     settings = load_settings()
     settings.summarizer_provider = value
     if value == "simple":
         settings.use_llm = False
     save_settings(settings)
-    await update.message.reply_text(f"Summarizer set to: {value}")
+    await update.message.reply_text(f"Саммаризатор установлен: {value}")
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -284,9 +284,9 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
     if isinstance(update, Update) and update.effective_message:
         try:
-            error_msg = "An error occurred. Please try again later."
+            error_msg = "Произошла ошибка. Попробуйте позже."
             if isinstance(context.error, (TimedOut, NetworkError)):
-                error_msg = "Network timeout. Please try again."
+                error_msg = "Таймаут сети. Попробуйте еще раз."
             await _safe_send_message(context.bot, update.effective_chat.id, error_msg, parse_mode=None)
         except Exception:
             logger.error("Failed to send error message to user")

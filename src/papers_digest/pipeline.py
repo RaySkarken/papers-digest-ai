@@ -51,13 +51,6 @@ def run_digest(
     papers = _collect_papers(target_date, query, sources)
     ranked = rank_papers(query, papers, limit)
     summaries = {paper.paper_id: summarizer.summarize(paper) for paper in ranked}
-    keywords = extract_keywords(query, ranked)
-    recommendations = [
-        "Check novelty vs. prior art for the top 2 papers.",
-        "Pay attention to evaluation datasets and ablation results.",
-    ]
-    if keywords:
-        recommendations.append(f"Watch for themes: {', '.join(keywords)}.")
 
-    return format_digest(query, target_date, ranked, summaries, recommendations)
+    return format_digest(query, target_date, ranked, summaries, [])
 
