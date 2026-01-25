@@ -19,7 +19,7 @@ class SimpleSummarizer:
         abstract = paper.abstract or ""
         sentences = re.split(r"(?<=[.!?])\s+", abstract.strip())
         summary = " ".join(sentences[:2]).strip()
-        return summary or "Summary not available."
+        return summary or "Краткое содержание недоступно."
 
 
 class OpenAISummarizer:
@@ -29,10 +29,10 @@ class OpenAISummarizer:
 
     def summarize(self, paper: Paper) -> str:
         prompt = (
-            "Summarize the following paper in 2-3 sentences. Focus on novelty, "
-            "methods, and results.\n\n"
-            f"Title: {paper.title}\n"
-            f"Abstract: {paper.abstract}\n"
+            "Сделай краткое содержание следующей статьи на русском языке в 2-3 предложениях. "
+            "Сосредоточься на новизне, методах и результатах.\n\n"
+            f"Название: {paper.title}\n"
+            f"Аннотация: {paper.abstract}\n"
         )
         try:
             response = requests.post(
@@ -40,7 +40,10 @@ class OpenAISummarizer:
                 headers={"Authorization": f"Bearer {self._api_key}"},
                 json={
                     "model": self._model,
-                    "messages": [{"role": "user", "content": prompt}],
+                    "messages": [
+                        {"role": "system", "content": "Ты помощник, который делает краткие содержания научных статей на русском языке."},
+                        {"role": "user", "content": prompt}
+                    ],
                     "temperature": 0.2,
                     "max_tokens": 180,
                 },
@@ -60,15 +63,20 @@ class OllamaSummarizer:
 
     def summarize(self, paper: Paper) -> str:
         prompt = (
-            "Summarize the following paper in 2-3 sentences. Focus on novelty, "
-            "methods, and results.\n\n"
-            f"Title: {paper.title}\n"
-            f"Abstract: {paper.abstract}\n"
+            "Сделай краткое содержание следующей статьи на русском языке в 2-3 предложениях. "
+            "Сосредоточься на новизне, методах и результатах.\n\n"
+            f"Название: {paper.title}\n"
+            f"Аннотация: {paper.abstract}\n"
         )
         try:
             response = requests.post(
                 f"{self._base_url}/api/generate",
-                json={"model": self._model, "prompt": prompt, "stream": False},
+                json={
+                    "model": self._model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "system": "Ты помощник, который делает краткие содержания научных статей на русском языке.",
+                },
                 timeout=60,
             )
             response.raise_for_status()
