@@ -41,7 +41,8 @@ def run_digest(
     limit: int = 10,
     sources: Sequence[PaperSource] | None = None,
     summarizer: Summarizer | None = None,
-) -> str:
+) -> list[str]:
+    """Run digest and return list of message parts for Telegram."""
     sources = list(sources) if sources is not None else _default_sources()
     if summarizer is None:
         api_key = os.getenv("OPENAI_API_KEY", "")

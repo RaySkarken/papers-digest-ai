@@ -113,19 +113,24 @@ def _pick_summarizer(settings: Settings) -> Summarizer:
     return SimpleSummarizer()
 
 
-def _build_digest(settings: Settings) -> str:
+def _build_digest(settings: Settings) -> list[str]:
     query = settings.science_area.strip()
     if not query:
         raise ValueError("Science area is not set. Use /set_area.")
     return run_digest(query=query, target_date=date.today(), limit=8, summarizer=_pick_summarizer(settings))
 
 
-async def _safe_send_message(bot, chat_id: str | int, text: str, max_retries: int = 3) -> bool:
+async def _safe_send_message(
+    bot, chat_id: str | int, text: str, parse_mode: str | None = "MarkdownV2", max_retries: int = 3
+) -> bool:
     """Safely send a message with retry logic."""
-    text = text[:4096]  # Telegram limit
+    # Ensure text doesn't exceed Telegram limit
+    if len(text) > 4096:
+        text = text[:4093] + "..."
+    
     for attempt in range(max_retries):
         try:
-            await bot.send_message(chat_id=chat_id, text=text)
+            await bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
             return True
         except (TimedOut, NetworkError) as e:
             logger.warning(f"Network error sending message (attempt {attempt + 1}/{max_retries}): {e}")
@@ -134,8 +139,27 @@ async def _safe_send_message(bot, chat_id: str | int, text: str, max_retries: in
                 return False
         except TelegramError as e:
             logger.error(f"Telegram error sending message: {e}")
+            # Try without parse_mode if MarkdownV2 fails
+            if parse_mode == "MarkdownV2" and attempt == 0:
+                try:
+                    await bot.send_message(chat_id=chat_id, text=text, parse_mode=None)
+                    return True
+                except Exception:
+                    pass
             return False
     return False
+
+
+async def _send_multiple_messages(bot, chat_id: str | int, messages: list[str]) -> bool:
+    """Send multiple messages sequentially."""
+    success = True
+    for msg in messages:
+        if not await _safe_send_message(bot, chat_id, msg):
+            success = False
+            # Small delay between messages to avoid rate limiting
+            import asyncio
+            await asyncio.sleep(0.5)
+    return success
 
 
 async def preview_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -143,19 +167,19 @@ async def preview_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     settings = load_settings()
     try:
-        digest = _build_digest(settings)
+        digest_parts = _build_digest(settings)
     except ValueError as exc:
-        await _safe_send_message(context.bot, update.effective_chat.id, str(exc))
+        await _safe_send_message(context.bot, update.effective_chat.id, str(exc), parse_mode=None)
         return
     except Exception as e:
         logger.error(f"Failed to build digest: {e}", exc_info=True)
         await _safe_send_message(
-            context.bot, update.effective_chat.id, f"Error generating digest: {e}. Some sources may be unavailable."
+            context.bot, update.effective_chat.id, f"Error generating digest: {e}. Some sources may be unavailable.", parse_mode=None
         )
         return
-    success = await _safe_send_message(context.bot, update.effective_chat.id, digest)
+    success = await _send_multiple_messages(context.bot, update.effective_chat.id, digest_parts)
     if not success:
-        await update.message.reply_text("Generated digest but failed to send. Check logs.")
+        await _safe_send_message(context.bot, update.effective_chat.id, "Generated digest but failed to send some parts. Check logs.", parse_mode=None)
 
 
 async def post_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -164,24 +188,24 @@ async def post_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     settings = load_settings()
     channel = settings.channel_id or os.getenv("PAPERS_DIGEST_CHANNEL_ID", "")
     if not channel:
-        await _safe_send_message(context.bot, update.effective_chat.id, "Channel is not set. Use /set_channel.")
+        await _safe_send_message(context.bot, update.effective_chat.id, "Channel is not set. Use /set_channel.", parse_mode=None)
         return
     try:
-        digest = _build_digest(settings)
+        digest_parts = _build_digest(settings)
     except ValueError as exc:
-        await _safe_send_message(context.bot, update.effective_chat.id, str(exc))
+        await _safe_send_message(context.bot, update.effective_chat.id, str(exc), parse_mode=None)
         return
     except Exception as e:
         logger.error(f"Failed to build digest: {e}", exc_info=True)
         await _safe_send_message(
-            context.bot, update.effective_chat.id, f"Error generating digest: {e}. Some sources may be unavailable."
+            context.bot, update.effective_chat.id, f"Error generating digest: {e}. Some sources may be unavailable.", parse_mode=None
         )
         return
-    success = await _safe_send_message(context.bot, channel, digest)
+    success = await _send_multiple_messages(context.bot, channel, digest_parts)
     if success:
-        await _safe_send_message(context.bot, update.effective_chat.id, "Posted to channel.")
+        await _safe_send_message(context.bot, update.effective_chat.id, "Posted to channel.", parse_mode=None)
     else:
-        await _safe_send_message(context.bot, update.effective_chat.id, "Failed to post to channel. Check logs.")
+        await _safe_send_message(context.bot, update.effective_chat.id, "Failed to post to channel. Check logs.", parse_mode=None)
 
 
 def _parse_time(value: str) -> tuple[int, int] | None:
@@ -263,7 +287,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             error_msg = "An error occurred. Please try again later."
             if isinstance(context.error, (TimedOut, NetworkError)):
                 error_msg = "Network timeout. Please try again."
-            await _safe_send_message(context.bot, update.effective_chat.id, error_msg)
+            await _safe_send_message(context.bot, update.effective_chat.id, error_msg, parse_mode=None)
         except Exception:
             logger.error("Failed to send error message to user")
 
@@ -274,14 +298,14 @@ async def _scheduled_post(app: Application) -> None:
     if not channel:
         return
     try:
-        digest = _build_digest(settings)
+        digest_parts = _build_digest(settings)
     except ValueError:
         logger.warning("Scheduled post skipped: science area not set")
         return
     except Exception as e:
         logger.error(f"Scheduled post failed: {e}", exc_info=True)
         return
-    success = await _safe_send_message(app.bot, channel, digest)
+    success = await _send_multiple_messages(app.bot, channel, digest_parts)
     if not success:
         logger.error(f"Failed to send scheduled post to channel {channel}")
 

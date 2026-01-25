@@ -17,7 +17,7 @@ class CrossrefSource(PaperSource):
         url = "https://api.crossref.org/works"
         params = {
             "filter": f"from-pub-date:{target},until-pub-date:{target}",
-            "query.title": query.strip() or "artificial intelligence",
+            "query": query.strip() or "artificial intelligence",
             "rows": 50,
             "select": "DOI,title,author,URL,abstract,published-online,published-print",
         }
