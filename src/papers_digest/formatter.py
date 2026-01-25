@@ -8,11 +8,13 @@ from papers_digest.models import Paper
 
 def _escape_markdown_v2(text: str) -> str:
     """Escape special characters for Telegram MarkdownV2."""
-    # Characters that need escaping in MarkdownV2
-    special_chars = r"_*[]()~`>#+-=|{}.!"
-    # Escape each special character
-    for char in special_chars:
-        text = text.replace(char, f"\\{char}")
+    # Characters that need escaping in MarkdownV2: _ * [ ] ( ) ~ ` > # + - = | { } . !
+    # First escape backslashes, then other special chars
+    # This avoids double-escaping issues
+    text = text.replace("\\", "\\\\")  # Escape backslashes first
+    # Then escape all other special characters
+    for char in "_*[]()~`>#+-=|{}.!":
+        text = text.replace(char, "\\" + char)
     return text
 
 
@@ -26,12 +28,13 @@ def format_digest(
     """Format digest as Telegram MarkdownV2 messages. Returns list of message parts."""
     messages = []
     
-    # Header
-    header = f"*Papers digest for {target_date.isoformat()}*\n\n"
+    # Header - escape date
+    date_str = _escape_markdown_v2(target_date.isoformat())
+    header = f"*Papers digest for {date_str}*\n\n"
     header += f"Query: *{_escape_markdown_v2(query)}*\n\n"
     
     if not papers:
-        header += "No papers matched today\\."
+        header += _escape_markdown_v2("No papers matched today.")
         messages.append(header)
         return messages
 
@@ -39,7 +42,7 @@ def format_digest(
     current_message = header
     
     for idx, paper in enumerate(papers, start=1):
-        summary = summaries.get(paper.paper_id, "Summary not available\\.")
+        summary = summaries.get(paper.paper_id, "Summary not available.")
         authors = ", ".join(paper.authors) if paper.authors else "Unknown authors"
         
         # Escape all text fields
