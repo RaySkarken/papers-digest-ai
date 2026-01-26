@@ -52,17 +52,20 @@ async def _require_admin(update: Update) -> bool:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _require_admin(update):
         return
-    web_url = os.getenv("PAPERS_DIGEST_WEB_URL", "http://localhost:5000")
-    await update.message.reply_text(
-        "Панель администратора готова.\n\n"
-        "🌐 Откройте Mini-App для удобного управления:\n"
-        f"/app - открыть веб-интерфейс\n\n"
-        "Или используйте команды:\n"
-        "/channels - список каналов\n"
-        "/add_channel <@channel> <область> - добавить канал\n"
-        "/preview_today [@channel] - предпросмотр\n"
-        "/post_today [@channel] - опубликовать"
-    )
+    web_url = os.getenv("PAPERS_DIGEST_WEB_URL", "")
+    msg = "Панель администратора готова.\n\n"
+    if web_url:
+        msg += "🌐 Откройте Mini-App для удобного управления:\n"
+        msg += f"/app - открыть веб-интерфейс\n\n"
+    msg += "Основные команды:\n"
+    msg += "/channels - список каналов\n"
+    msg += "/add_channel <@channel> [область] - добавить канал\n"
+    msg += "/channel_set_time <@channel> <ЧЧ:ММ> - установить время\n"
+    msg += "/channel_set_timezone <@channel> <часовой_пояс> - установить часовой пояс\n"
+    msg += "/channel_info <@channel> - информация о канале\n"
+    msg += "/preview_today [@channel] - предпросмотр\n"
+    msg += "/post_today [@channel] - опубликовать"
+    await update.message.reply_text(msg)
 
 
 async def open_app(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
