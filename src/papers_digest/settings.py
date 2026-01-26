@@ -13,6 +13,7 @@ class ChannelConfig:
     channel_id: str
     science_area: str = ""
     post_time: str = ""
+    timezone: str = "UTC"  # IANA timezone name (e.g., "Europe/Moscow", "America/New_York")
     use_llm: bool = False
     summarizer_provider: str = "auto"
     enabled: bool = True

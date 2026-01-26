@@ -195,10 +195,28 @@ async def channel_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     llm_status = "включен" if config.use_llm else "выключен"
     status = "включен" if config.enabled else "выключен"
+    
+    # Calculate next scheduled time
+    next_post_info = ""
+    if config.post_time and config.enabled:
+        from datetime import datetime
+        try:
+            tz = ZoneInfo(config.timezone)
+        except Exception:
+            tz = ZoneInfo("UTC")
+        parsed = _parse_time(config.post_time)
+        if parsed:
+            now = datetime.now(tz)
+            next_time = now.replace(hour=parsed[0], minute=parsed[1], second=0, microsecond=0)
+            if next_time <= now:
+                next_time = next_time.replace(day=next_time.day + 1)
+            next_post_info = f"\nСледующая публикация: {next_time.strftime('%Y-%m-%d %H:%M')} {config.timezone}"
+    
     await update.message.reply_text(
         f"Канал: {config.channel_id}\n"
         f"Область науки: {config.science_area or 'не установлена'}\n"
         f"Время публикации: {config.post_time or 'не установлено'}\n"
+        f"Часовой пояс: {config.timezone}{next_post_info}\n"
         f"LLM: {llm_status}\n"
         f"Саммаризатор: {config.summarizer_provider}\n"
         f"Статус: {status}"
@@ -245,7 +263,82 @@ async def channel_set_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     config.post_time = time_str
     save_settings(settings)
     _reschedule(context.application)
-    await update.message.reply_text(f"Время публикации для {channel_id} установлено: {time_str}")
+    
+    # Show next scheduled time
+    from datetime import datetime
+    try:
+        tz = ZoneInfo(config.timezone)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    now = datetime.now(tz)
+    next_time = now.replace(hour=parsed[0], minute=parsed[1], second=0, microsecond=0)
+    if next_time <= now:
+        next_time = next_time.replace(day=next_time.day + 1)
+    
+    await update.message.reply_text(
+        f"Время публикации для {channel_id} установлено: {time_str}\n"
+        f"Часовой пояс: {config.timezone}\n"
+        f"Следующая публикация: {next_time.strftime('%Y-%m-%d %H:%M')} {config.timezone}"
+    )
+
+
+async def channel_set_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _require_admin(update):
+        return
+    args = context.args or []
+    if len(args) < 2:
+        await update.message.reply_text(
+            "Использование: /channel_set_timezone <@channel> <часовой_пояс>\n\n"
+            "Примеры:\n"
+            "- Europe/Moscow\n"
+            "- America/New_York\n"
+            "- Asia/Tokyo\n"
+            "- UTC\n\n"
+            "Список: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+        )
+        return
+    channel_id = args[0].strip()
+    timezone_str = args[1].strip()
+    
+    # Validate timezone
+    try:
+        ZoneInfo(timezone_str)
+    except Exception:
+        await update.message.reply_text(
+            f"Неверный часовой пояс: {timezone_str}\n\n"
+            "Используйте IANA timezone (например: Europe/Moscow, America/New_York)"
+        )
+        return
+    
+    settings = load_settings()
+    config = get_channel_config(settings, channel_id)
+    if not config:
+        await update.message.reply_text(f"Канал {channel_id} не найден. Используйте /add_channel для добавления.")
+        return
+    
+    old_tz = config.timezone
+    config.timezone = timezone_str
+    save_settings(settings)
+    _reschedule(context.application)
+    
+    # Show next scheduled time if time is set
+    if config.post_time:
+        from datetime import datetime
+        tz = ZoneInfo(timezone_str)
+        parsed = _parse_time(config.post_time)
+        if parsed:
+            now = datetime.now(tz)
+            next_time = now.replace(hour=parsed[0], minute=parsed[1], second=0, microsecond=0)
+            if next_time <= now:
+                next_time = next_time.replace(day=next_time.day + 1)
+            await update.message.reply_text(
+                f"Часовой пояс для {channel_id} изменен: {old_tz} → {timezone_str}\n"
+                f"Следующая публикация: {next_time.strftime('%Y-%m-%d %H:%M')} {timezone_str}"
+            )
+        else:
+            await update.message.reply_text(f"Часовой пояс для {channel_id} изменен: {old_tz} → {timezone_str}")
+    else:
+        await update.message.reply_text(f"Часовой пояс для {channel_id} установлен: {timezone_str}")
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -549,15 +642,25 @@ def _apply_schedule(scheduler: AsyncIOScheduler, app: Application) -> None:
         if not parsed:
             continue
         hour, minute = parsed
+        
+        # Get timezone for this channel
+        try:
+            tz = ZoneInfo(config.timezone)
+        except Exception:
+            logger.warning(f"Invalid timezone {config.timezone} for channel {channel_id}, using UTC")
+            tz = ZoneInfo("UTC")
+        
         scheduler.add_job(
             _scheduled_post,
             "cron",
             args=[app, channel_id],
             hour=hour,
             minute=minute,
+            timezone=tz,
             id=f"daily_post_{channel_id}",
             replace_existing=True,
         )
+        logger.info(f"Scheduled post for {channel_id} at {hour:02d}:{minute:02d} {config.timezone}")
     
     # Legacy: support old single channel format
     if not settings.channels and settings.post_time:
@@ -566,12 +669,14 @@ def _apply_schedule(scheduler: AsyncIOScheduler, app: Application) -> None:
             hour, minute = parsed
             channel_id = settings.channel_id or os.getenv("PAPERS_DIGEST_CHANNEL_ID", "")
             if channel_id:
+                tz = _tzinfo()
                 scheduler.add_job(
                     _scheduled_post,
                     "cron",
                     args=[app, channel_id],
                     hour=hour,
                     minute=minute,
+                    timezone=tz,
                     id="daily_post_legacy",
                     replace_existing=True,
                 )
@@ -611,6 +716,7 @@ def main() -> None:
     app.add_handler(CommandHandler("channel_info", channel_info))
     app.add_handler(CommandHandler("channel_set_area", channel_set_area))
     app.add_handler(CommandHandler("channel_set_time", channel_set_time))
+    app.add_handler(CommandHandler("channel_set_timezone", channel_set_timezone))
     # Legacy commands (kept for backward compatibility)
     app.add_handler(CommandHandler("set_area", set_area))
     app.add_handler(CommandHandler("show_area", show_area))
