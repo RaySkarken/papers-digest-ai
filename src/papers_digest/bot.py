@@ -12,6 +12,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from papers_digest.metrics import get_metrics_collector
 from papers_digest.pipeline import run_digest
 from papers_digest.settings import (
     Settings,
@@ -358,6 +359,48 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"LLM: {llm_enabled}\nСаммаризатор: {summarizer}"
     )
 
+
+async def show_metrics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show system metrics."""
+    if not await _require_admin(update):
+        return
+    try:
+        metrics = get_metrics_collector()
+        system_metrics = metrics.get_system_metrics()
+        daily_summary = metrics.get_daily_summary()
+        
+        msg = "📊 Метрики системы\n\n"
+        msg += f"Всего дайджестов: {system_metrics.total_digests}\n"
+        msg += f"Всего публикаций: {system_metrics.total_posts}\n"
+        msg += f"Успешных: {system_metrics.successful_posts}\n"
+        msg += f"Неудачных: {system_metrics.failed_posts}\n"
+        msg += f"Каналов: {len(load_settings().channels)}\n\n"
+        
+        if system_metrics.total_digests > 0:
+            msg += f"Среднее статей на дайджест: {system_metrics.avg_papers_per_digest:.1f}\n"
+            msg += f"Среднее время генерации: {system_metrics.avg_generation_time:.1f}с\n"
+        
+        msg += "\n📅 Сегодня:\n"
+        msg += f"Дайджестов: {daily_summary['digests_count']}\n"
+        msg += f"Публикаций: {daily_summary['posts_count']}\n"
+        if daily_summary['digests_count'] > 0:
+            msg += f"Найдено статей: {daily_summary['total_papers_found']}\n"
+            msg += f"Отранжировано: {daily_summary['total_papers_ranked']}\n"
+            msg += f"Средний релевантность: {daily_summary['avg_relevance_score']:.2f}\n"
+            msg += f"Среднее время: {daily_summary['avg_generation_time']:.1f}с\n"
+            if daily_summary['sources_used']:
+                msg += f"Источники: {', '.join(sorted(daily_summary['sources_used']))}\n"
+        
+        if system_metrics.last_digest_time:
+            from datetime import datetime
+            last_time = datetime.fromisoformat(system_metrics.last_digest_time)
+            msg += f"\nПоследний дайджест: {last_time.strftime('%Y-%m-%d %H:%M:%S')}"
+        
+        await update.message.reply_text(msg)
+    except Exception as e:
+        logger.error(f"Failed to get metrics: {e}", exc_info=True)
+        await update.message.reply_text(f"Ошибка получения метрик: {e}")
+
 def _pick_summarizer(config: ChannelConfig | Settings) -> Summarizer:
     """Pick summarizer based on channel config or global settings."""
     api_key = os.getenv("OPENAI_API_KEY", "")
@@ -413,16 +456,39 @@ async def _safe_send_message(
     return False
 
 
-async def _send_multiple_messages(bot, chat_id: str | int, messages: list[str]) -> bool:
-    """Send multiple messages sequentially."""
+async def _send_multiple_messages(bot, chat_id: str | int, messages: list[str], record_metrics: bool = True) -> tuple[bool, int, int]:
+    """Send multiple messages sequentially. Returns (success, parts_sent, total_chars)."""
     success = True
+    parts_sent = 0
+    total_chars = 0
+    error_message = ""
+    
     for msg in messages:
-        if not await _safe_send_message(bot, chat_id, msg):
+        if await _safe_send_message(bot, chat_id, msg):
+            parts_sent += 1
+            total_chars += len(msg)
+        else:
             success = False
+            if not error_message:
+                error_message = "Failed to send some parts"
             # Small delay between messages to avoid rate limiting
             import asyncio
             await asyncio.sleep(0.5)
-    return success
+    
+    if record_metrics:
+        try:
+            metrics = get_metrics_collector()
+            metrics.record_post(
+                channel_id=str(chat_id),
+                success=success,
+                parts_sent=parts_sent,
+                total_chars=total_chars,
+                error_message=error_message if not success else "",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to record post metrics: {e}", exc_info=True)
+    
+    return success, parts_sent, total_chars
 
 
 async def preview_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -461,7 +527,7 @@ async def preview_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             context.bot, update.effective_chat.id, f"Ошибка генерации дайджеста: {e}. Некоторые источники могут быть недоступны.", parse_mode=None
         )
         return
-    success = await _send_multiple_messages(context.bot, update.effective_chat.id, digest_parts)
+    success, _, _ = await _send_multiple_messages(context.bot, update.effective_chat.id, digest_parts, record_metrics=False)
     if not success:
         await _safe_send_message(context.bot, update.effective_chat.id, "Дайджест сгенерирован, но не удалось отправить некоторые части. Проверьте логи.", parse_mode=None)
 
@@ -507,9 +573,9 @@ async def post_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             context.bot, update.effective_chat.id, f"Ошибка генерации дайджеста: {e}. Некоторые источники могут быть недоступны.", parse_mode=None
         )
         return
-    success = await _send_multiple_messages(context.bot, channel_id, digest_parts)
+    success, parts_sent, total_chars = await _send_multiple_messages(context.bot, channel_id, digest_parts)
     if success:
-        await _safe_send_message(context.bot, update.effective_chat.id, f"Опубликовано в канале {channel_id}.", parse_mode=None)
+        await _safe_send_message(context.bot, update.effective_chat.id, f"Опубликовано в канале {channel_id} ({parts_sent} частей, {total_chars} символов).", parse_mode=None)
     else:
         await _safe_send_message(context.bot, update.effective_chat.id, f"Не удалось опубликовать в канале {channel_id}. Проверьте логи.", parse_mode=None)
 
@@ -614,9 +680,11 @@ async def _scheduled_post(app: Application, channel_id: str) -> None:
     except Exception as e:
         logger.error(f"Scheduled post failed for {channel_id}: {e}", exc_info=True)
         return
-    success = await _send_multiple_messages(app.bot, channel_id, digest_parts)
+    success, parts_sent, total_chars = await _send_multiple_messages(app.bot, channel_id, digest_parts)
     if not success:
         logger.error(f"Failed to send scheduled post to channel {channel_id}")
+    else:
+        logger.info(f"Scheduled post sent to {channel_id}: {parts_sent} parts, {total_chars} chars")
 
 
 def _configure_scheduler(app: Application) -> AsyncIOScheduler:
@@ -726,6 +794,7 @@ def main() -> None:
     app.add_handler(CommandHandler("set_channel", set_channel))
     # Other commands
     app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("metrics", show_metrics))
     app.add_handler(CommandHandler("preview_today", preview_today))
     app.add_handler(CommandHandler("post_today", post_today))
     app.add_handler(CommandHandler("set_post_time", set_post_time))
